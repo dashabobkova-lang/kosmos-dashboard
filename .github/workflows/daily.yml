@@ -1,0 +1,55 @@
+name: KOSMOS dashboard
+
+on:
+  schedule:
+    # время в UTC; Москва = UTC+3
+    - cron: "0 6 * * *"    # 09:00 МСК — основная сборка
+    - cron: "30 7 * * *"   # 10:30 МСК — проверка расхождений
+  workflow_dispatch:        # кнопка "Run workflow" для ручного запуска
+
+permissions:
+  contents: write           # нужно, чтобы коммитить state.json обратно
+
+concurrency:
+  group: kosmos-dashboard
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Сборка дашборда и сводка
+        env:
+          BITRIX_WEBHOOK: ${{ secrets.BITRIX_WEBHOOK }}
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT: ${{ secrets.TG_CHAT }}
+        run: python daily.py
+
+      - name: Сохранить состояние
+        run: |
+          if [ -n "$(git status --porcelain state.json)" ]; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add state.json
+            git commit -m "state: $(date -u +%F)"
+            git push
+          else
+            echo "state.json не изменился"
+          fi
+
+      - name: Сообщить о сбое
+        if: failure()
+        env:
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT: ${{ secrets.TG_CHAT }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
+            -d chat_id="$TG_CHAT" \
+            -d parse_mode=HTML \
+            -d text="⚠️ <b>Дашборд КОСМОС не собрался</b>%0AЗадача упала: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
