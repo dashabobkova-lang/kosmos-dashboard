@@ -42,6 +42,10 @@ TARGET_FOLDER_ID = os.environ.get("TARGET_FOLDER_ID", "101232")
 TARGET_NAME = os.environ.get("TARGET_NAME", "SALES REPORT WB KOSMOS.xlsx")
 ART_PREFIX = os.environ.get("ART_PREFIX", "ДАБ")
 
+# настройки, которые переопределяет сборщик другого кабинета (см. build_lulu.py)
+COMPANY = "данные поставщика ООО «КОСМОС»"
+SHOW_CANCEL = False   # добавить колонки "Отмены, шт" и "% отмен" (данные из API)
+
 DASH_URL = ("https://bylulu.bitrix24.ru/docs/file/"
             "%D0%94%D0%90%D0%A8%D0%91%D0%9E%D0%A0%D0%94%D0%AB%20%D0%98%20"
             "%D0%9E%D0%A2%D0%A7%D0%95%D0%A2%D0%AB/"
@@ -313,6 +317,8 @@ SAT = {"t": 16, "i": 17, "m": 18, "p": 19, "a": 20}
 SBT = {"t": 21, "i": 22, "m": 23, "p": 24, "a": 25}
 CAT_T, CAT_I, CAT_A = 26, 27, 28
 
+CAT_COL = "B"   # по какой колонке считать категории: B - артикул, C - предмет
+
 CATEGORIES = [
     ("ВЕТРОВКИ", ["*VETR-*"]),
     ("КУРТКИ", ["*JACK-*"]),
@@ -338,7 +344,11 @@ def build_sheet1(rows, dates, transit):
     c_btot, c_bavg, c_b7 = 13 + 2 * nd, 14 + 2 * nd, 15 + 2 * nd
     c_pc, c_pcdel = 16 + 2 * nd, 17 + 2 * nd
     c_chk, c_days, c_share = 18 + 2 * nd, 19 + 2 * nd, 20 + 2 * nd
-    last = c_share
+    c_canc, c_cancp = 21 + 2 * nd, 22 + 2 * nd
+    tail_cols = (c_btot, c_bavg, c_b7, c_pc, c_pcdel, c_chk, c_days, c_share)
+    if SHOW_CANCEL:
+        tail_cols += (c_canc, c_cancp)
+    last = tail_cols[-1]
     r0, r1 = 5, 4 + len(rows)
     oL, oR = colname(ord_cols[0]), colname(ord_cols[-1])
     o7c = colname(ord_cols[max(0, nd - 7)])
@@ -374,9 +384,10 @@ def build_sheet1(rows, dates, transit):
              % (buy_cols[-1], c_otot, c_o7, c_btot, c_days, c_share, c_share))
     L.append("<sheetData>")
 
-    title = ("SALES REPORT по дням — данные поставщика ООО «КОСМОС», %s–%s (только %s)"
-             % (dates[0][8:10] + "." + dates[0][5:7],
-                dates[-1][8:10] + "." + dates[-1][5:7] + "." + dates[-1][:4], ART_PREFIX))
+    title = ("SALES REPORT по дням — %s, %s–%s%s"
+             % (COMPANY, dates[0][8:10] + "." + dates[0][5:7],
+                dates[-1][8:10] + "." + dates[-1][5:7] + "." + dates[-1][:4],
+                (" (только %s)" % ART_PREFIX) if ART_PREFIX else ""))
     row = ('<row r="1"><c r="A1" s="0" t="inlineStr"><is><t>%s</t></is></c>' % esc(title))
     for n in range(2, last + 1):
         if n == ord_cols[0]:
@@ -393,7 +404,8 @@ def build_sheet1(rows, dates, transit):
              c_otot: "Итого", c_oavg: "Ср/день", c_o7: "Посл. 7 дн",
              c_btot: "Итого", c_bavg: "Ср/день", c_b7: "Посл. 7 дн",
              c_pc: "% выкупа", c_pcdel: "% выкупа (учёт доставки 7 дн)",
-             c_chk: "Ср. чек, ₽", c_days: "Хватит на, дн", c_share: "Доля в продажах, %"}
+             c_chk: "Ср. чек, ₽", c_days: "Хватит на, дн", c_share: "Доля в продажах, %",
+             c_canc: "Отмены, шт", c_cancp: "% отмен"}
     row = '<row r="2" ht="34">'
     for n in range(1, 10):
         row += '<c r="%s2" s="1" t="inlineStr"><is><t>%s</t></is></c>' % (colname(n), esc(heads[n]))
@@ -403,7 +415,7 @@ def build_sheet1(rows, dates, transit):
         row += '<c r="%s2" s="1" t="inlineStr"><is><t>%s</t></is></c>' % (colname(n), esc(heads[n]))
     for i, d in enumerate(dates):
         row += '<c r="%s2" s="4"><v>%d</v></c>' % (colname(buy_cols[i]), serial(d))
-    for n in (c_btot, c_bavg, c_b7, c_pc, c_pcdel, c_chk, c_days, c_share):
+    for n in tail_cols:
         row += '<c r="%s2" s="1" t="inlineStr"><is><t>%s</t></is></c>' % (colname(n), esc(heads[n]))
     L.append(row + "</row>")
 
@@ -419,7 +431,7 @@ def build_sheet1(rows, dates, transit):
         tot = sum(r["pay"].get(d, 0) for r in rows)
         row += '<c r="%s3" s="2"><v>%d</v></c>' % (colname(buy_cols[i]), round(tot))
     row += '<c r="%s3" s="2"><f>SUM(%s3:%s3)</f></c>' % (bT, bL, bR)
-    for n in (c_bavg, c_b7, c_pc, c_pcdel, c_chk, c_days, c_share):
+    for n in tail_cols[1:]:
         row += '<c r="%s3" s="2"/>' % colname(n)
     L.append(row + "</row>")
 
@@ -447,6 +459,10 @@ def build_sheet1(rows, dates, transit):
     row += ('<c r="%s4" s="2"><f>IFERROR(%s4/(%s4/%d),&quot;&quot;)</f></c>'
             % (colname(c_days), colname(C["stock"]), oT, nd))
     row += '<c r="%s4" s="3"><f>IFERROR(%s4/%s4,&quot;&quot;)</f></c>' % (colname(c_share), bT, bT)
+    if SHOW_CANCEL:
+        cc = colname(c_canc)
+        row += '<c r="%s4" s="2"><f>SUM(%s%d:%s%d)</f></c>' % (cc, cc, r0, cc, r1)
+        row += '<c r="%s4" s="3"><f>IFERROR(%s4/%s4,&quot;&quot;)</f></c>' % (colname(c_cancp), cc, oT)
     L.append(row + "</row>")
 
     prev_g, band = None, False
@@ -493,6 +509,11 @@ def build_sheet1(rows, dates, transit):
                 % (colname(c_days), rn, S["a"], colname(C["stock"]), rn, oT, rn, nd))
         row += ('<c r="%s%d" s="%d"><f>IFERROR(%s%d/$%s$4,&quot;&quot;)</f></c>'
                 % (colname(c_share), rn, S["p"], bT, rn, bT))
+        if SHOW_CANCEL:
+            cc = colname(c_canc)
+            row += '<c r="%s%d" s="%d"><v>%d</v></c>' % (cc, rn, S["i"], round(sum(r.get("canc", {}).values())))
+            row += ('<c r="%s%d" s="%d"><f>IFERROR(%s%d/%s%d,&quot;&quot;)</f></c>'
+                    % (colname(c_cancp), rn, S["p"], cc, rn, oT, rn))
         L.append(row + "</row>")
 
     L.append("</sheetData>")
@@ -570,8 +591,8 @@ def build_sheet2(rows, dates, transit):
                '<c r="D%d" s="%d" t="inlineStr"><is><t>%s</t></is></c>'
                % (rr, rr, CAT_T, rr, CAT_T, rr, CAT_T, rr, CAT_T, esc(name)))
         for cl in "EFGHIJ":
-            parts = ['SUMIF($B$%d:$B$%d,&quot;%s&quot;,%s$%d:%s$%d)' % (r0, r1, p, cl, r0, cl, r1)
-                     for p in pats]
+            parts = ['SUMIF($%s$%d:$%s$%d,&quot;%s&quot;,%s$%d:%s$%d)'
+                     % (CAT_COL, r0, CAT_COL, r1, p, cl, r0, cl, r1) for p in pats]
             row += '<c r="%s%d" s="%d"><f>%s</f></c>' % (cl, rr, CAT_I, "+".join(parts))
         row += '<c r="K%d" s="%d"><f>IFERROR(I%d/J%d,&quot;&quot;)</f></c></row>' % (rr, CAT_A, rr, rr)
         L.append(row)
