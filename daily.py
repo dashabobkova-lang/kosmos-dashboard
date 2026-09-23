@@ -73,8 +73,22 @@ def main():
     agg, dates, transit, missing = B.collect()
     rows = sorted(agg.values(), key=lambda r: r["art"])
     if not dates or dates[-1] != target:
-        B.log("последний день в данных %s != %s — отчёта ещё нет, жду следующего запуска"
+        B.log("последний день в данных %s != %s — отчёта ещё нет"
               % (dates[-1] if dates else "—", target))
+        # поздний прогон: данных так и не появилось - предупреждаем, один раз за день
+        st = load_state()
+        key = "missing:" + target
+        if datetime.datetime.now(MSK).hour >= 10 and key not in st:
+            dd = "%s.%s.%s" % (target[8:10], target[5:7], target[:4])
+            folder = "%s.%s.%s" % (target[8:10], target[5:7], target[2:4])
+            msg = ("⚠️ <b>КОСМОС: нет отчёта за %s</b>\n\n"
+                   "В папке «ежедневные отчеты КОСМОС/%s» не появился «отчет по продажам» — "
+                   "дашборд и сводку собрать не из чего.\n"
+                   "Как только файл выложат, сборку можно запустить вручную; "
+                   "иначе данные подхватятся завтрашним прогоном." % (dd, folder))
+            if B.tg_send(msg):
+                st[key] = datetime.datetime.now(MSK).isoformat(timespec="seconds")
+                save_state(st)
         return
 
     # папку за сегодня, которая ещё пуста, в предупреждения не тащим
