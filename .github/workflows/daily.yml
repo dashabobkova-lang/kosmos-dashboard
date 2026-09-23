@@ -2,13 +2,22 @@ name: KOSMOS dashboard
 
 on:
   schedule:
-    # время в UTC; Москва = UTC+3
-    - cron: "0 6 * * *"    # 09:00 МСК — основная сборка
+    # время в UTC; Москва = UTC+3. Скрипт идемпотентен: лишних сообщений не будет.
+    - cron: "0 6 * * *"    # 09:00 МСК — забор отчётов и проверка доступности Битрикса
+    - cron: "30 6 * * *"   # 09:30 МСК — сборка дашборда, выкладка и сводка
+    - cron: "0 7 * * *"    # 10:00 МСК — если отчёт выложили позже
     - cron: "30 7 * * *"   # 10:30 МСК — проверка расхождений
-  workflow_dispatch:        # кнопка "Run workflow" для ручного запуска
+    - cron: "0 8 * * *"    # 11:00 МСК — предупреждение, если данных так и нет
+    # дневные попытки: если отчёт выложат позже, сводка придёт сама, без запуска руками
+    - cron: "0 10 * * *"   # 13:00 МСК
+    - cron: "0 12 * * *"   # 15:00 МСК
+    - cron: "0 14 * * *"   # 17:00 МСК
+    - cron: "0 16 * * *"   # 19:00 МСК
+    - cron: "0 18 * * *"   # 21:00 МСК
+  workflow_dispatch:
 
 permissions:
-  contents: write           # нужно, чтобы коммитить state.json обратно
+  contents: write
 
 concurrency:
   group: kosmos-dashboard
@@ -32,12 +41,14 @@ jobs:
         run: python daily.py
 
       - name: Сохранить состояние
+        if: always()
         run: |
           if [ -n "$(git status --porcelain state.json)" ]; then
             git config user.name  "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add state.json
             git commit -m "state: $(date -u +%F)"
+            git pull --rebase --autostash
             git push
           else
             echo "state.json не изменился"
