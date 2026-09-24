@@ -1,8 +1,7 @@
 name: KOSMOS watchdog
 
+# Расписание отключено 24.09.2026 вместе с основным workflow.
 on:
-  schedule:
-    - cron: "30 8 * * *"   # 11:30 МСК — проверка, что утренний прогон вообще состоялся
   workflow_dispatch:
 
 jobs:
