@@ -1,18 +1,16 @@
-name: KOSMOS дашборд
+name: kosmos-daily
 
-# Полный цикл в облаке: папка Google Диска -> сборка -> Google Таблица -> сводка.
-# Компьютер Дарьи не участвует.
 on:
   schedule:
-    - cron: "0 6 * * *"    # 09:00 МСК
-    - cron: "0 7 * * *"    # 10:00 МСК
-    - cron: "0 8 * * *"    # 11:00 МСК
-    - cron: "0 10 * * *"   # 13:00 МСК
-    - cron: "0 13 * * *"   # 16:00 МСК
-    - cron: "0 16 * * *"   # 19:00 МСК
+    - cron: "0 6 * * *"
+    - cron: "0 7 * * *"
+    - cron: "0 8 * * *"
+    - cron: "0 10 * * *"
+    - cron: "0 13 * * *"
+    - cron: "0 16 * * *"
   workflow_dispatch:
   push:
-    branches: [main]   # правка кода = внеплановый прогон
+    branches: [main]
 
 permissions:
   contents: write
@@ -31,61 +29,32 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Установить зависимости
-        run: pip install --quiet gspread google-auth openpyxl
+      - run: pip install --quiet gspread google-auth openpyxl
 
-      # скачанные выгрузки переживают прогоны, чтобы не качать всё заново
-      - name: Кэш выгрузок
-        uses: actions/cache@v4
-        with:
-          path: cloud/данные
-          key: kosmos-files-${{ github.run_id }}
-          restore-keys: kosmos-files-
-
-      - name: Ключ доступа к Google
+      - name: write key
         env:
           GSHEET_KEY_JSON: ${{ secrets.GSHEET_KEY_JSON }}
-        run: |
-          if [ -z "$GSHEET_KEY_JSON" ]; then
-            echo "::error::не задан секрет GSHEET_KEY_JSON"
-            exit 1
-          fi
-          printf '%s' "$GSHEET_KEY_JSON" > cloud/service_account.json
+        run: printf '%s' "$GSHEET_KEY_JSON" > cloud/service_account.json
 
-      - name: Сборка и сводка
+      - name: build and notify
         working-directory: cloud
         env:
           GSHEET_KEY_PATH: service_account.json
+          KOSMOS_WORK: work
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT: ${{ secrets.TG_CHAT }}
         run: python kosmos_daily.py
 
-      - name: Убрать ключ
-        if: always()
-        run: rm -f cloud/service_account.json
-
-      # отметка о прогоне: по ней видно, что облако отработало и что именно собрало
-      - name: Сохранить отметку
+      - name: receipt
         if: always()
         run: |
-          mkdir -p cloud
+          rm -f cloud/service_account.json
           date -u +"%Y-%m-%dT%H:%M:%SZ" > cloud/last_run.txt
-          tail -n 12 cloud/kosmos_daily.log >> cloud/last_run.txt 2>/dev/null || true
-          if [ -n "$(git status --porcelain cloud/last_run.txt cloud/kosmos_state.json)" ]; then
-            git config user.name  "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add cloud/last_run.txt cloud/kosmos_state.json 2>/dev/null || true
-            git commit -m "прогон $(date -u +%F\ %H:%M)" || true
-            git pull --rebase --autostash -q || true
-            git push -q || true
-          fi
-
-      - name: Сообщить о сбое
-        if: failure()
-        env:
-          TG_TOKEN: ${{ secrets.TG_TOKEN }}
-          TG_CHAT: ${{ secrets.TG_CHAT }}
-        run: |
-          curl -s -X POST "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
-            -d chat_id="$TG_CHAT" -d parse_mode=HTML \
-            -d text="⚠️ <b>Дашборд КОСМОС не собрался</b>%0A${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "status=${{ job.status }}" >> cloud/last_run.txt
+          tail -n 15 cloud/kosmos_daily.log >> cloud/last_run.txt 2>/dev/null || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f cloud/last_run.txt cloud/kosmos_state.json 2>/dev/null || true
+          git commit -m "run receipt" || true
+          git pull --rebase --autostash -q || true
+          git push -q || true
