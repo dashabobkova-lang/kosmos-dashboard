@@ -14,6 +14,9 @@ on:
   push:
     branches: [main]   # правка кода = внеплановый прогон
 
+permissions:
+  contents: write
+
 concurrency:
   group: kosmos-daily
   cancel-in-progress: false
@@ -60,6 +63,22 @@ jobs:
       - name: Убрать ключ
         if: always()
         run: rm -f cloud/service_account.json
+
+      # отметка о прогоне: по ней видно, что облако отработало и что именно собрало
+      - name: Сохранить отметку
+        if: always()
+        run: |
+          mkdir -p cloud
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > cloud/last_run.txt
+          tail -n 12 cloud/kosmos_daily.log >> cloud/last_run.txt 2>/dev/null || true
+          if [ -n "$(git status --porcelain cloud/last_run.txt cloud/kosmos_state.json)" ]; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add cloud/last_run.txt cloud/kosmos_state.json 2>/dev/null || true
+            git commit -m "прогон $(date -u +%F\ %H:%M)" || true
+            git pull --rebase --autostash -q || true
+            git push -q || true
+          fi
 
       - name: Сообщить о сбое
         if: failure()
