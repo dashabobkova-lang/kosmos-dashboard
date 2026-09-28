@@ -11,6 +11,8 @@ on:
     - cron: "0 13 * * *"   # 16:00 МСК
     - cron: "0 16 * * *"   # 19:00 МСК
   workflow_dispatch:
+  push:
+    branches: [main]   # правка кода = внеплановый прогон
 
 concurrency:
   group: kosmos-daily
