@@ -1,0 +1,70 @@
+name: KOSMOS дашборд
+
+# Полный цикл в облаке: папка Google Диска -> сборка -> Google Таблица -> сводка.
+# Компьютер Дарьи не участвует.
+on:
+  schedule:
+    - cron: "0 6 * * *"    # 09:00 МСК
+    - cron: "0 7 * * *"    # 10:00 МСК
+    - cron: "0 8 * * *"    # 11:00 МСК
+    - cron: "0 10 * * *"   # 13:00 МСК
+    - cron: "0 13 * * *"   # 16:00 МСК
+    - cron: "0 16 * * *"   # 19:00 МСК
+  workflow_dispatch:
+
+concurrency:
+  group: kosmos-daily
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Установить зависимости
+        run: pip install --quiet gspread google-auth openpyxl
+
+      # скачанные выгрузки переживают прогоны, чтобы не качать всё заново
+      - name: Кэш выгрузок
+        uses: actions/cache@v4
+        with:
+          path: cloud/данные
+          key: kosmos-files-${{ github.run_id }}
+          restore-keys: kosmos-files-
+
+      - name: Ключ доступа к Google
+        env:
+          GSHEET_KEY_JSON: ${{ secrets.GSHEET_KEY_JSON }}
+        run: |
+          if [ -z "$GSHEET_KEY_JSON" ]; then
+            echo "::error::не задан секрет GSHEET_KEY_JSON"
+            exit 1
+          fi
+          printf '%s' "$GSHEET_KEY_JSON" > cloud/service_account.json
+
+      - name: Сборка и сводка
+        working-directory: cloud
+        env:
+          GSHEET_KEY_PATH: service_account.json
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT: ${{ secrets.TG_CHAT }}
+        run: python kosmos_daily.py
+
+      - name: Убрать ключ
+        if: always()
+        run: rm -f cloud/service_account.json
+
+      - name: Сообщить о сбое
+        if: failure()
+        env:
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT: ${{ secrets.TG_CHAT }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
+            -d chat_id="$TG_CHAT" -d parse_mode=HTML \
+            -d text="⚠️ <b>Дашборд КОСМОС не собрался</b>%0A${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
