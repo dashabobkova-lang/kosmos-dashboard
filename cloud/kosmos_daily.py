@@ -181,20 +181,51 @@ def tg_send(text):
 
 # ---------------------------------------------------------------- состояние
 
-def load_state():
+STATE_SHEET = "_состояние"
+
+
+def _state_ws():
+    import gspread
+    import kosmos_gsheet as G
+    gc = gspread.service_account(filename=G.KEY_PATH)
+    sh = gc.open_by_key(G.SHEET_ID)
     try:
-        with io.open(STATE, encoding="utf-8-sig") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {}
+        return sh.worksheet(STATE_SHEET)
+    except Exception:
+        ws = sh.add_worksheet(title=STATE_SHEET, rows=400, cols=2)
+        ws.update(range_name="A1", values=[["день", "итоги"]])
+        return ws
+
+
+def load_state():
+    """Память о разосланных сводках живёт в самой таблице — она одна
+    и для облака, и для запуска с компьютера, поэтому дублей не бывает."""
+    try:
+        rows = _state_ws().get_all_values()
     except Exception as e:
-        log("state повреждён (%s) — выхожу, чтобы не слать дубль" % e)
+        log("состояние не прочитано (%s) — выхожу, чтобы не слать дубль" % e)
         sys.exit(1)
+    out = {}
+    for r in rows[1:]:
+        if len(r) >= 2 and r[0]:
+            try:
+                out[r[0].strip()] = json.loads(r[1])
+            except Exception:
+                pass
+    return out
 
 
 def save_state(st):
-    with io.open(STATE, "w", encoding="utf-8") as f:
-        json.dump(st, f, ensure_ascii=False, indent=1, sort_keys=True)
+    try:
+        ws = _state_ws()
+        table = [["день", "итоги"]] + [["'" + d, json.dumps(st[d], ensure_ascii=False)]
+                                       for d in sorted(st)]
+        if ws.row_count < len(table):
+            ws.resize(rows=len(table) + 20, cols=2)
+        ws.batch_clear(["A1:B%d" % ws.row_count])
+        ws.update(range_name="A1", values=table, value_input_option="USER_ENTERED")
+    except Exception as e:
+        log("состояние не сохранено: %s" % e)
 
 
 # ---------------------------------------------------------------- прогон
