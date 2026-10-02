@@ -128,16 +128,28 @@ def made_at(blob):
 
 # ---------------------------------------------------------------- Telegram
 
+def clean_token(raw):
+    """Из секрета достаёт сам токен: туда легко попадает лишний текст из письма BotFather."""
+    m = re.search(r"\d{6,12}:[A-Za-z0-9_-]{30,}", raw or "")
+    return m.group(0) if m else (raw or "").strip()
+
+
+def clean_chat(raw):
+    """chat_id — число, возможно со знаком минус."""
+    m = re.search(r"-?\d{5,}", raw or "")
+    return m.group(0) if m else (raw or "").strip()
+
+
 def tg_send(text):
-    tok = os.environ.get("TG_TOKEN", "")
-    chat = os.environ.get("TG_CHAT", "")
+    tok = clean_token(os.environ.get("TG_TOKEN", ""))
+    chat = clean_chat(os.environ.get("TG_CHAT", ""))
     if not tok or not chat:
         try:
             for line in io.open(ENV, encoding="utf-8-sig"):
                 if line.startswith("TELEGRAM_BOT_TOKEN="):
-                    tok = tok or line.split("=", 1)[1].strip()
+                    tok = tok or clean_token(line.split("=", 1)[1])
                 elif line.startswith("TELEGRAM_CHAT_ID="):
-                    chat = chat or line.split("=", 1)[1].strip()
+                    chat = chat or clean_chat(line.split("=", 1)[1])
         except Exception:
             pass
     if not tok or not chat:
