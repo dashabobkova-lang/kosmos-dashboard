@@ -35,6 +35,7 @@ LOG = os.path.join(HERE, "kosmos_daily.log")
 ENV = os.path.join(os.path.dirname(HERE), ".env")
 
 MSK = datetime.timezone(datetime.timedelta(hours=3))
+LAST_TG = []   # причина, по которой не ушла сводка
 HEAD_RX = re.compile(r"с\s+(\d{2})\.(\d{2})\.(\d{4})\s+по\s+(\d{2})\.(\d{2})\.(\d{4})")
 
 
@@ -140,6 +141,7 @@ def tg_send(text):
         except Exception:
             pass
     if not tok or not chat:
+        LAST_TG.append("нет токена (%s) или chat_id (%s)" % (bool(tok), bool(chat)))
         log("Телеграм не настроен")
         return False
     payload = json.dumps({"chat_id": chat, "text": text, "parse_mode": "HTML",
@@ -148,11 +150,20 @@ def tg_send(text):
     req.add_header("Content-Type", "application/json; charset=utf-8")
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
-            ok = json.loads(r.read().decode("utf-8")).get("ok")
+            res = json.loads(r.read().decode("utf-8"))
+        ok = res.get("ok")
+        if not ok:
+            LAST_TG.append(str(res)[:200])
         log("Телеграм: ok=%s" % ok)
         return bool(ok)
     except Exception as e:
-        log("Телеграм ошибка: %s" % e)
+        detail = ""
+        try:
+            detail = e.read().decode("utf-8", "ignore")[:200]
+        except Exception:
+            pass
+        LAST_TG.append("%s %s" % (e, detail))
+        log("Телеграм ошибка: %s %s" % (e, detail))
         return False
 
 
@@ -364,7 +375,8 @@ def main():
             % (dd, " (исправленная)" if corrected else "", "\n".join(lines),
                len(dates), dates[0][8:10] + "." + dates[0][5:7], dd, len(rows), SHEET_URL))
     ok = tg_send(text)
-    trace.append("сводка за %s отправлена: %s" % (target, ok))
+    trace.append("сводка за %s отправлена: %s%s"
+                 % (target, ok, "" if ok else " — " + "; ".join(LAST_TG)))
     push_run_log(trace)
     if ok:
         st[target] = cur
