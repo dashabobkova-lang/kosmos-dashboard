@@ -244,6 +244,26 @@ def fetch_all():
     return best_sales
 
 
+def push_run_log(lines):
+    """Пишет отчёт о прогоне в лист _прогоны — это единственный способ увидеть,
+    что происходило в облаке: логи GitHub без токена недоступны."""
+    try:
+        import gspread
+        import kosmos_gsheet as G
+        gc = gspread.service_account(filename=G.KEY_PATH)
+        sh = gc.open_by_key(G.SHEET_ID)
+        try:
+            ws = sh.worksheet("_прогоны")
+        except Exception:
+            ws = sh.add_worksheet(title="_прогоны", rows=200, cols=3)
+            ws.update(range_name="A1", values=[["когда", "где", "что произошло"]])
+        where = "облако" if os.environ.get("GITHUB_ACTIONS") else "компьютер"
+        when = datetime.datetime.now(MSK).strftime("%d.%m %H:%M")
+        ws.append_row([when, where, " | ".join(lines)[:40000]], value_input_option="RAW")
+    except Exception as e:
+        log("отчёт о прогоне не записан: %s" % e)
+
+
 def push_cache(rows, rows_size, dates):
     """Заполняет служебный лист _данные, который читает старый скрипт в таблице.
 
@@ -290,13 +310,18 @@ def push_cache(rows, rows_size, dates):
 
 def main():
     force = "--force" in sys.argv
-    fetch_all()
+    trace = []
+    best = fetch_all()
+    trace.append("файлов-дней найдено: %d" % len(best))
 
     build_local.ROOT = WORK
     agg, dates, transit, missing, agg_size = build_local.collect_local()
     if not dates:
+        trace.append("разобранных дней нет")
+        push_run_log(trace)
         tg_send("⚠️ <b>КОСМОС</b>: в папке нет ни одной выгрузки продаж.")
         return
+    trace.append("дней в сборке: %d, последний %s" % (len(dates), dates[-1]))
     rows = sorted(agg.values(), key=lambda r: r["art"])
     rows_size = sorted(agg_size.values(), key=lambda r: r["art"])
     target = dates[-1]
@@ -305,6 +330,8 @@ def main():
            for k in ("o", "orub", "b", "pay")}
     st = load_state()
     if not force and st.get(target) == cur:
+        trace.append("данные за %s не изменились — выход" % target)
+        push_run_log(trace)
         log("данные за %s не изменились — ничего не делаю" % target)
         return
 
@@ -336,7 +363,10 @@ def main():
             "<i>Собрано дней: %d (%s–%s), артикулов %d.</i>\n\nДашборд:\n%s"
             % (dd, " (исправленная)" if corrected else "", "\n".join(lines),
                len(dates), dates[0][8:10] + "." + dates[0][5:7], dd, len(rows), SHEET_URL))
-    if tg_send(text):
+    ok = tg_send(text)
+    trace.append("сводка за %s отправлена: %s" % (target, ok))
+    push_run_log(trace)
+    if ok:
         st[target] = cur
         save_state(st)
 
