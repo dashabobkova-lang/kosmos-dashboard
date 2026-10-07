@@ -56,8 +56,13 @@ B.log = log
 
 def folder_items(folder_id):
     """Файлы и подпапки публичной папки: [(kind, id, name)]."""
-    url = "https://drive.google.com/embeddedfolderview?id=%s#list" % folder_id
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    # &t=... и заголовки против кэша: иначе Google отдаёт список папки с задержкой
+    url = ("https://drive.google.com/embeddedfolderview?id=%s&t=%d#list"
+           % (folder_id, int(datetime.datetime.now().timestamp())))
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0",
+        "Cache-Control": "no-cache, max-age=0",
+        "Pragma": "no-cache"})
     with urllib.request.urlopen(req, timeout=120) as r:
         html = r.read().decode("utf-8", "ignore")
     out = []

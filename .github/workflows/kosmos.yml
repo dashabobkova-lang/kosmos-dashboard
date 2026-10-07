@@ -2,12 +2,8 @@ name: kosmos-daily
 
 on:
   schedule:
-    - cron: "0 6 * * *"
-    - cron: "0 7 * * *"
-    - cron: "0 8 * * *"
-    - cron: "0 10 * * *"
-    - cron: "0 13 * * *"
-    - cron: "0 16 * * *"
+    # каждые полчаса с 9:00 до 21:00 МСК (в UTC это 6:00-18:00)
+    - cron: "0,30 6-18 * * *"
   workflow_dispatch:
   push:
     branches: [main]
