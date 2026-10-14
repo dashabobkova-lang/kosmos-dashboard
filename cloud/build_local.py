@@ -18,6 +18,16 @@ ROOT = r"Z:\ДАШБОРДЫ И ОТЧЕТЫ\ежедневные отчеты �
 ART_PREFIX = B.ART_PREFIX
 
 
+# склады вне РФ — в колонку "Остатки FBO РФ" не попадают
+FOREIGN_WAREHOUSES = ("ереван", "астана", "атакент", "актобе", "ташкент", "алматы",
+                      "караганд", "шымкент", "минск", "самарканд", "бишкек")
+
+
+def is_foreign(name):
+    n = (name or "").lower()
+    return any(w in n for w in FOREIGN_WAREHOUSES)
+
+
 def collect_local():
     folders = []
     for name in os.listdir(ROOT):
@@ -63,8 +73,11 @@ def collect_local():
             a["orub"][date] = a["orub"].get(date, 0) + B.num(c.get("M"))
             a["b"][date] = a["b"].get(date, 0) + B.num(c.get("N"))
             a["pay"][date] = a["pay"].get(date, 0) + B.num(c.get("O"))
-            a["stock"][date] = a["stock"].get(date, 0) + B.num(c.get("P"))
-            if "Свой" in (c.get("K") or ""):
+            wh = c.get("K") or ""
+            own = "Свой" in wh
+            if not own and not is_foreign(wh):
+                a["stock"][date] = a["stock"].get(date, 0) + B.num(c.get("P"))
+            if own:
                 a["fbs"][date] = a["fbs"].get(date, 0) + B.num(c.get("P"))
 
             # тот же разрез, но по размерам: колонка I
@@ -78,8 +91,9 @@ def collect_local():
             z["orub"][date] = z["orub"].get(date, 0) + B.num(c.get("M"))
             z["b"][date] = z["b"].get(date, 0) + B.num(c.get("N"))
             z["pay"][date] = z["pay"].get(date, 0) + B.num(c.get("O"))
-            z["stock"][date] = z["stock"].get(date, 0) + B.num(c.get("P"))
-            if "Свой" in (c.get("K") or ""):
+            if not own and not is_foreign(wh):
+                z["stock"][date] = z["stock"].get(date, 0) + B.num(c.get("P"))
+            if own:
                 z["fbs"][date] = z["fbs"].get(date, 0) + B.num(c.get("P"))
             cnt += 1
         dates.append(date)
