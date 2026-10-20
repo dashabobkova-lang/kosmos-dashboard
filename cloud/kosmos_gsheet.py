@@ -14,7 +14,9 @@ import sys
 import gspread
 from openpyxl import load_workbook
 
-KEY_PATH = os.environ.get("GSHEET_KEY_PATH", "service_account.json")
+KEY_PATH = os.environ.get(
+    "GSHEET_KEY_PATH",
+    r"C:\Users\DASHA\Desktop\Claude\ключи и всякое\mindful-marking-509611-i9-2e61e83f7f71.json")
 SHEET_ID = os.environ.get("KOSMOS_SHEET_ID", "1mLPTkAl84cYwKKPZN_IsnrSuMPYA3vXweajwoup5e80")
 SKIP_SHEETS = {"_данные"}          # кэш Apps Script
 
@@ -108,6 +110,43 @@ GREY = {"red": 0.925, "green": 0.925, "blue": 0.925}
 def group_key(art):
     a = str(art or "").strip()
     return a.split("/")[0].strip() if "/" in a else a
+
+
+RED = {"red": 0.957, "green": 0.780, "blue": 0.765}       # критично
+YELLOW = {"red": 1.0, "green": 0.898, "blue": 0.667}      # ниже нормы
+RED_TEXT = {"red": 0.6, "green": 0.0, "blue": 0.0}
+
+
+def buyout_flags(sh, ws, rows):
+    """Красит выкупаемость: ниже 20% — красным, 20–25% — жёлтым.
+
+    Берётся колонка «% выкупа (доставка 7 дн)»: она сравнивает выкупы
+    с заказами, по которым доставка уже прошла, поэтому свежие дни
+    не занижают картину.
+    """
+    if len(rows) < HEADER_DATE_ROW:
+        return 0
+    head = rows[HEADER_DATE_ROW - 1]
+    col = None
+    for i, v in enumerate(head):
+        if "доставка 7" in str(v):
+            col = i
+            break
+    if col is None:
+        return 0
+    rng = {"sheetId": ws.id, "startRowIndex": DATA_START_ROW - 1, "endRowIndex": len(rows),
+           "startColumnIndex": col, "endColumnIndex": col + 1}
+    requests = []
+    for limit, bg in ((0.25, YELLOW), (0.20, RED)):      # красное правило выше жёлтого
+        requests.append({"addConditionalFormatRule": {"index": 0, "rule": {
+            "ranges": [rng],
+            "booleanRule": {
+                "condition": {"type": "NUMBER_LESS", "values": [{"userEnteredValue": str(limit)}]},
+                "format": {"backgroundColor": bg,
+                           "textFormat": {"bold": bg is RED, "foregroundColor":
+                                          RED_TEXT if bg is RED else {"red": 0, "green": 0, "blue": 0}}}}}}})
+    sh.batch_update({"requests": requests})
+    return len(requests)
 
 
 def body_format(sh, ws, rows):
@@ -219,6 +258,8 @@ def main():
         if name != "Запас":
             body_format(sh, ws, rows)     # сначала фон, потом градиенты поверх
         runs = refresh_gradients(sh, ws, rows)
+        if name != "Запас":
+            buyout_flags(sh, ws, rows)
         head_format(sh, ws, rows)
         print("%-16s %dx%d, градиентов %d" % (name, n_rows, n_cols, runs))
 
