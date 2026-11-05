@@ -145,7 +145,38 @@ def clean_chat(raw):
     return m.group(0) if m else (raw or "").strip()
 
 
+SETTINGS_SHEET = "_настройки"
+
+
+def posting_paused():
+    """Пауза постинга в Телеграм: лист _настройки, строка «постинг» = «выкл».
+
+    Флаг лежит в таблице, поэтому действует сразу и на облачные прогоны,
+    и на запуск с компьютера.
+    """
+    try:
+        import gspread
+        import kosmos_gsheet as G
+        gc = gspread.service_account(filename=G.KEY_PATH)
+        sh = gc.open_by_key(G.SHEET_ID)
+        try:
+            ws = sh.worksheet(SETTINGS_SHEET)
+        except Exception:
+            ws = sh.add_worksheet(title=SETTINGS_SHEET, rows=20, cols=2)
+            ws.update(range_name="A1", values=[["настройка", "значение"], ["постинг", "вкл"]])
+            return False
+        for row in ws.get_all_values()[1:]:
+            if len(row) >= 2 and row[0].strip().lower() == "постинг":
+                return row[1].strip().lower() in ("выкл", "off", "нет", "пауза")
+    except Exception as e:
+        log("настройки не прочитаны: %s" % e)
+    return False
+
+
 def tg_send(text):
+    if posting_paused():
+        log("постинг в Телеграм на паузе — сообщение не отправлено")
+        return True
     tok = clean_token(os.environ.get("TG_TOKEN", ""))
     chat = clean_chat(os.environ.get("TG_CHAT", ""))
     if not tok or not chat:
