@@ -167,7 +167,17 @@ def posting_paused():
             return False
         for row in ws.get_all_values()[1:]:
             if len(row) >= 2 and row[0].strip().lower() == "постинг":
-                return row[1].strip().lower() in ("выкл", "off", "нет", "пауза")
+                v = row[1].strip().lower()
+                if not v.startswith(("выкл", "off", "нет", "пауза")):
+                    return False
+                # «выкл до 2026-11-08» — пауза сама снимается в указанный день
+                m = re.search(r"(\d{4})-(\d{2})-(\d{2})", v)
+                if m:
+                    today = datetime.datetime.now(MSK).date().isoformat()
+                    if today >= m.group(0):
+                        log("пауза постинга истекла %s — публикую" % m.group(0))
+                        return False
+                return True
     except Exception as e:
         log("настройки не прочитаны: %s" % e)
     return False

@@ -129,7 +129,7 @@ def buyout_flags(sh, ws, rows):
     head = rows[HEADER_DATE_ROW - 1]
     col = None
     for i, v in enumerate(head):
-        if "доставка 7" in str(v):
+        if "доставк" in str(v):
             col = i
             break
     if col is None:
@@ -141,7 +141,8 @@ def buyout_flags(sh, ws, rows):
         requests.append({"addConditionalFormatRule": {"index": 0, "rule": {
             "ranges": [rng],
             "booleanRule": {
-                "condition": {"type": "NUMBER_LESS", "values": [{"userEnteredValue": str(limit)}]},
+                "condition": {"type": "NUMBER_LESS",
+                              "values": [{"userEnteredValue": str(limit).replace(".", ",")}]},
                 "format": {"backgroundColor": bg,
                            "textFormat": {"bold": bg is RED, "foregroundColor":
                                           RED_TEXT if bg is RED else {"red": 0, "green": 0, "blue": 0}}}}}}})
@@ -196,6 +197,24 @@ def body_format(sh, ws, rows):
                       "startColumnIndex": 0, "endColumnIndex": width},
             "cell": {"userEnteredFormat": {"backgroundColor": GREY if painted else WHITE}},
             "fields": "userEnteredFormat.backgroundColor"}})
+
+    # колонки с процентами и дробями: общий формат "# ##0" их обнуляет, возвращаем свой
+    head = rows[HEADER_DATE_ROW - 1]
+    special = []
+    for i, v in enumerate(head):
+        t = str(v or "")
+        if "%" in t or "Доля" in t:
+            special.append((i, "0%"))
+        elif "Ср/день" in t or "Хватит" in t or "Запас" in t:
+            special.append((i, "0.0"))
+    for col, pattern in special:
+        requests.append({"repeatCell": {
+            "range": {"sheetId": ws.id, "startRowIndex": 2, "endRowIndex": n,
+                      "startColumnIndex": col, "endColumnIndex": col + 1},
+            "cell": {"userEnteredFormat": {
+                "numberFormat": {"type": "PERCENT" if pattern == "0%" else "NUMBER",
+                                 "pattern": pattern}}},
+            "fields": "userEnteredFormat.numberFormat"}})
 
     for i in range(0, len(requests), 150):
         sh.batch_update({"requests": requests[i:i + 150]})
