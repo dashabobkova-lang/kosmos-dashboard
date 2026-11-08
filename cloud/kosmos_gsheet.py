@@ -173,6 +173,51 @@ def buyout_flags(sh, ws, rows):
     return len(requests)
 
 
+GREEN_TEXT = {"red": 0.118, "green": 0.557, "blue": 0.243}   # 1E8E3E
+RED_GROWTH = {"red": 0.851, "green": 0.188, "blue": 0.145}   # D93025
+GROWTH_PATTERN = "+0%;-0%;0%"   # до целого, как просила Дарья
+
+
+def growth_format(sh, ws, rows):
+    """Колонки «Прирост за неделю»: формат как в дашборде Ozon —
+    +0,0% / −0,0%, рост зелёным, падение красным, ноль чёрным."""
+    if len(rows) < HEADER_DATE_ROW:
+        return 0
+    head = rows[HEADER_DATE_ROW - 1]
+    cols = [i for i, v in enumerate(head) if "Прирост" in str(v)]
+    if not cols:
+        return 0
+    requests = []
+    for col in cols:
+        rng = {"sheetId": ws.id, "startRowIndex": 2, "endRowIndex": len(rows),
+               "startColumnIndex": col, "endColumnIndex": col + 1}
+        requests.append({"repeatCell": {
+            "range": rng,
+            "cell": {"userEnteredFormat": {
+                "numberFormat": {"type": "NUMBER", "pattern": GROWTH_PATTERN},
+                "horizontalAlignment": "CENTER"}},
+            "fields": "userEnteredFormat(numberFormat,horizontalAlignment)"}})
+        for cond, color in (("NUMBER_GREATER", GREEN_TEXT), ("NUMBER_LESS", RED_GROWTH)):
+            requests.append({"addConditionalFormatRule": {"index": 0, "rule": {
+                "ranges": [rng],
+                "booleanRule": {
+                    "condition": {"type": cond, "values": [{"userEnteredValue": "0"}]},
+                    "format": {"textFormat": {"foregroundColor": color, "bold": True}}}}}})
+    sh.batch_update({"requests": requests})
+    return len(cols)
+
+
+def freeze(sh, ws, name):
+    """Закрепляет шапку и левые колонки: на листах отчёта — 4 строки и 9 колонок
+    (курсор встаёт на J5), на «Запасе» — 2 строки и 4 колонки."""
+    rows_n, cols_n = (2, 4) if name == "Запас" else (4, 9)
+    sh.batch_update({"requests": [{"updateSheetProperties": {
+        "properties": {"sheetId": ws.id,
+                       "gridProperties": {"frozenRowCount": rows_n,
+                                          "frozenColumnCount": cols_n}},
+        "fields": "gridProperties.frozenRowCount,gridProperties.frozenColumnCount"}}]})
+
+
 def body_format(sh, ws, rows):
     """Тело таблицы: числовой формат на всю ширину и чередование групп артикулов.
 
@@ -303,6 +348,9 @@ def main():
         if name != "Запас":
             buyout_flags(sh, ws, rows)
         head_format(sh, ws, rows)
+        if name != "Запас":
+            growth_format(sh, ws, rows)
+        freeze(sh, ws, name)
         print("%-16s %dx%d, градиентов %d" % (name, n_rows, n_cols, runs))
 
     print("готово -> https://docs.google.com/spreadsheets/d/%s/edit" % SHEET_ID)

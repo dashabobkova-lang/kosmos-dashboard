@@ -334,18 +334,34 @@ def group_key(art):
     return a.split("/")[0].strip() if "/" in a else a
 
 
-def build_sheet1(rows, dates, transit, titleSuffix=""):
+def build_sheet1(rows, dates, transit, titleSuffix="", all_dates=None):
     nd = len(dates)
     C = {"photo": 1, "art": 2, "wb": 3, "subj": 4, "brand": 5,
          "stock": 6, "fbs": 7, "toc": 8, "fromc": 9}
     ord_cols = list(range(10, 10 + nd))
-    c_otot, c_oavg, c_o7 = 10 + nd, 11 + nd, 12 + nd
-    buy_cols = list(range(13 + nd, 13 + 2 * nd))
-    c_btot, c_bavg, c_b7 = 13 + 2 * nd, 14 + 2 * nd, 15 + 2 * nd
-    c_pc, c_pcdel = 16 + 2 * nd, 17 + 2 * nd
-    c_chk, c_days, c_share = 18 + 2 * nd, 19 + 2 * nd, 20 + 2 * nd
-    c_canc, c_cancp = 21 + 2 * nd, 22 + 2 * nd
-    tail_cols = (c_btot, c_bavg, c_b7, c_pc, c_pcdel, c_chk, c_days, c_share)
+    c_otot, c_ogrow, c_oavg, c_o7 = 10 + nd, 11 + nd, 12 + nd, 13 + nd
+    buy_cols = list(range(14 + nd, 14 + 2 * nd))
+    c_btot, c_bgrow, c_bavg, c_b7 = 14 + 2 * nd, 15 + 2 * nd, 16 + 2 * nd, 17 + 2 * nd
+    c_pc, c_pcdel = 18 + 2 * nd, 19 + 2 * nd
+    c_chk, c_days, c_share = 20 + 2 * nd, 21 + 2 * nd, 22 + 2 * nd
+    c_canc, c_cancp = 23 + 2 * nd, 24 + 2 * nd
+    tail_cols = (c_btot, c_bgrow, c_bavg, c_b7, c_pc, c_pcdel, c_chk, c_days, c_share)
+
+    # прирост считаем по всей истории, а не по колонкам листа:
+    # неделя без последнего дня против предыдущей недели
+    hist = all_dates or dates
+    week_now = hist[-8:-1] if len(hist) >= 8 else []
+    week_prev = hist[-15:-8] if len(hist) >= 15 else []
+
+    def growth(r, key):
+        a = sum(r[key].get(d, 0) for d in week_now)
+        b = sum(r[key].get(d, 0) for d in week_prev)
+        return (a - b) / b if b else ""
+
+    def growth_total(key):
+        a = sum(sum(r[key].get(d, 0) for d in week_now) for r in rows)
+        b = sum(sum(r[key].get(d, 0) for d in week_prev) for r in rows)
+        return (a - b) / b if b else ""
     if SHOW_CANCEL:
         tail_cols += (c_canc, c_cancp)
     last = tail_cols[-1]
@@ -402,8 +418,10 @@ def build_sheet1(rows, dates, transit, titleSuffix=""):
     heads = {1: "Фото", 2: "Артикул продавца", 3: "Артикул WB", 4: "Предмет", 5: "Бренд",
              6: "Остатки FBO РФ все склады", 7: "Остаток FBS, шт", 8: "В пути до клиента, шт",
              9: "В пути от клиента, шт",
-             c_otot: "Итого", c_oavg: "Ср/день", c_o7: "Посл. 7 дн",
-             c_btot: "Итого", c_bavg: "Ср/день", c_b7: "Посл. 7 дн",
+             c_otot: "Итого", c_ogrow: "Прирост за неделю, %",
+             c_oavg: "Ср/день", c_o7: "Посл. 7 дн",
+             c_btot: "Итого", c_bgrow: "Прирост за неделю, %",
+             c_bavg: "Ср/день", c_b7: "Посл. 7 дн",
              c_pc: "% выкупа", c_pcdel: "% выкупа (учёт доставки 7 дн)",
              c_chk: "Ср. чек, ₽", c_days: "Хватит на, дн", c_share: "Доля в продажах, %",
              c_canc: "Отмены, шт", c_cancp: "% отмен"}
@@ -412,7 +430,7 @@ def build_sheet1(rows, dates, transit, titleSuffix=""):
         row += '<c r="%s2" s="1" t="inlineStr"><is><t>%s</t></is></c>' % (colname(n), esc(heads[n]))
     for i, d in enumerate(dates):
         row += '<c r="%s2" s="4"><v>%d</v></c>' % (colname(ord_cols[i]), serial(d))
-    for n in (c_otot, c_oavg, c_o7):
+    for n in (c_otot, c_ogrow, c_oavg, c_o7):
         row += '<c r="%s2" s="1" t="inlineStr"><is><t>%s</t></is></c>' % (colname(n), esc(heads[n]))
     for i, d in enumerate(dates):
         row += '<c r="%s2" s="4"><v>%d</v></c>' % (colname(buy_cols[i]), serial(d))
@@ -427,11 +445,20 @@ def build_sheet1(rows, dates, transit, titleSuffix=""):
     for i, d in enumerate(dates):
         tot = sum(r["orub"].get(d, 0) for r in rows)
         row += '<c r="%s3" s="2"><v>%d</v></c>' % (colname(ord_cols[i]), round(tot))
-    row += '<c r="%s3" s="2"><f>SUM(%s3:%s3)</f></c><c r="%s3" s="2"/><c r="%s3" s="2"/>' % (oT, oL, oR, colname(c_oavg), o7L)
+    g_rub = growth_total("orub")
+    row += ('<c r="%s3" s="2"><f>SUM(%s3:%s3)</f></c>'
+            '<c r="%s3" s="3">%s</c>'
+            '<c r="%s3" s="2"/><c r="%s3" s="2"/>'
+            % (oT, oL, oR, colname(c_ogrow),
+               "<v>%.6f</v>" % g_rub if g_rub != "" else "",
+               colname(c_oavg), o7L))
     for i, d in enumerate(dates):
         tot = sum(r["pay"].get(d, 0) for r in rows)
         row += '<c r="%s3" s="2"><v>%d</v></c>' % (colname(buy_cols[i]), round(tot))
-    row += '<c r="%s3" s="2"><f>SUM(%s3:%s3)</f></c>' % (bT, bL, bR)
+    gb_rub = growth_total("pay")
+    row += ('<c r="%s3" s="2"><f>SUM(%s3:%s3)</f></c><c r="%s3" s="3">%s</c>'
+            % (bT, bL, bR, colname(c_bgrow),
+               "<v>%.6f</v>" % gb_rub if gb_rub != "" else ""))
     for n in tail_cols[1:]:
         row += '<c r="%s3" s="2"/>' % colname(n)
     L.append(row + "</row>")
@@ -445,11 +472,17 @@ def build_sheet1(rows, dates, transit, titleSuffix=""):
     for n in ord_cols + [c_otot]:
         cl = colname(n)
         row += '<c r="%s4" s="2"><f>SUM(%s%d:%s%d)</f></c>' % (cl, cl, r0, cl, r1)
+    g = growth_total("o")
+    row += ('<c r="%s4" s="3">%s</c>' % (colname(c_ogrow),
+            "<v>%.6f</v>" % g if g != "" else ""))
     row += '<c r="%s4" s="2"><f>ROUND(%s4/%d,1)</f></c>' % (colname(c_oavg), oT, nd)
     row += '<c r="%s4" s="2"><f>SUM(%s%d:%s%d)</f></c>' % (o7L, o7L, r0, o7L, r1)
     for n in buy_cols + [c_btot]:
         cl = colname(n)
         row += '<c r="%s4" s="2"><f>SUM(%s%d:%s%d)</f></c>' % (cl, cl, r0, cl, r1)
+    gb = growth_total("b")
+    row += ('<c r="%s4" s="3">%s</c>' % (colname(c_bgrow),
+            "<v>%.6f</v>" % gb if gb != "" else ""))
     row += '<c r="%s4" s="2"><f>ROUND(%s4/%d,1)</f></c>' % (colname(c_bavg), bT, nd)
     b7L = colname(c_b7)
     row += '<c r="%s4" s="2"><f>SUM(%s%d:%s%d)</f></c>' % (b7L, b7L, r0, b7L, r1)
@@ -491,11 +524,17 @@ def build_sheet1(rows, dates, transit, titleSuffix=""):
         for i, d in enumerate(dates):
             row += '<c r="%s%d" s="%d"><v>%d</v></c>' % (colname(ord_cols[i]), rn, S["i"], round(r["o"].get(d, 0)))
         row += '<c r="%s%d" s="%d"><f>SUM(%s%d:%s%d)</f></c>' % (oT, rn, S["i"], oL, rn, oR, rn)
+        g = growth(r, "o")
+        row += ('<c r="%s%d" s="%d">%s</c>' % (colname(c_ogrow), rn, S["p"],
+                "<v>%.6f</v>" % g if g != "" else ""))
         row += '<c r="%s%d" s="%d"><f>ROUND(SUM(%s%d:%s%d)/%d,1)</f></c>' % (colname(c_oavg), rn, S["a"], oL, rn, oR, rn, nd)
         row += '<c r="%s%d" s="%d"><f>SUM(%s%d:%s%d)</f></c>' % (o7L, rn, S["i"], o7c, rn, oR, rn)
         for i, d in enumerate(dates):
             row += '<c r="%s%d" s="%d"><v>%d</v></c>' % (colname(buy_cols[i]), rn, S["i"], round(r["b"].get(d, 0)))
         row += '<c r="%s%d" s="%d"><f>SUM(%s%d:%s%d)</f></c>' % (bT, rn, S["i"], bL, rn, bR, rn)
+        gb = growth(r, "b")
+        row += ('<c r="%s%d" s="%d">%s</c>' % (colname(c_bgrow), rn, S["p"],
+                "<v>%.6f</v>" % gb if gb != "" else ""))
         row += '<c r="%s%d" s="%d"><f>ROUND(SUM(%s%d:%s%d)/%d,1)</f></c>' % (colname(c_bavg), rn, S["a"], bL, rn, bR, rn, nd)
         row += '<c r="%s%d" s="%d"><f>SUM(%s%d:%s%d)</f></c>' % (b7L, rn, S["i"], b7c, rn, bR, rn)
         row += ('<c r="%s%d" s="%d"><f>IFERROR(SUM(%s%d:%s%d)/SUM(%s%d:%s%d),&quot;&quot;)</f></c>'
@@ -692,8 +731,9 @@ def build_xlsx(rows, dates, transit, rows_size=None):
     if rows_size:
         parts["xl/worksheets/sheet3.xml"] = build_sheet1(rows_size, dates, {})
     short = dates[-LAST_DAYS:] if len(dates) > LAST_DAYS else dates
-    parts["xl/worksheets/sheet4.xml"] = build_sheet1(rows, short, transit,
-                                                     titleSuffix=" — последние %d дней" % len(short))
+    parts["xl/worksheets/sheet4.xml"] = build_sheet1(
+        rows, short, transit,
+        titleSuffix=" — последние %d дней" % len(short), all_dates=dates)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for name, content in parts.items():
