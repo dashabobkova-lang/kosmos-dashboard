@@ -27,6 +27,29 @@ HEADER_DATE_ROW = 2
 DATA_START_ROW = 5
 
 
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets",
+          "https://www.googleapis.com/auth/drive"]
+FALLBACK_TOKEN_URI = "https://www.googleapis.com/oauth2/v4/token"
+
+
+def client():
+    """gspread-клиент. Если узел авторизации Google недоступен (у провайдера
+    бывает заблокирован oauth2.googleapis.com), берём токен через
+    www.googleapis.com — он отвечает тем же API."""
+    import gspread
+    from google.oauth2.service_account import Credentials
+
+    creds = Credentials.from_service_account_file(KEY_PATH, scopes=SCOPES)
+    try:
+        import socket, ssl
+        ctx = ssl.create_default_context()
+        with socket.create_connection(("oauth2.googleapis.com", 443), timeout=8) as sock:
+            ctx.wrap_socket(sock, server_hostname="oauth2.googleapis.com").close()
+    except Exception:
+        creds._token_uri = FALLBACK_TOKEN_URI
+    return gspread.authorize(creds)
+
+
 def to_ru_formula(f):
     """В русской локали разделитель аргументов — точка с запятой."""
     out, in_str = [], False
@@ -252,7 +275,7 @@ def head_format(sh, ws, rows):
 
 def main():
     path = sys.argv[1]
-    gc = gspread.service_account(filename=KEY_PATH)
+    gc = client()
     sh = gc.open_by_key(SHEET_ID)
     wb = load_workbook(path)
     existing = {ws.title: ws for ws in sh.worksheets()}

@@ -155,9 +155,8 @@ def posting_paused():
     и на запуск с компьютера.
     """
     try:
-        import gspread
         import kosmos_gsheet as G
-        gc = gspread.service_account(filename=G.KEY_PATH)
+        gc = G.client()
         sh = gc.open_by_key(G.SHEET_ID)
         try:
             ws = sh.worksheet(SETTINGS_SHEET)
@@ -231,9 +230,8 @@ STATE_SHEET = "_состояние"
 
 
 def _state_ws():
-    import gspread
     import kosmos_gsheet as G
-    gc = gspread.service_account(filename=G.KEY_PATH)
+    gc = G.client()
     sh = gc.open_by_key(G.SHEET_ID)
     try:
         return sh.worksheet(STATE_SHEET)
@@ -348,9 +346,8 @@ def push_run_log(lines):
     """Пишет отчёт о прогоне в лист _прогоны — это единственный способ увидеть,
     что происходило в облаке: логи GitHub без токена недоступны."""
     try:
-        import gspread
         import kosmos_gsheet as G
-        gc = gspread.service_account(filename=G.KEY_PATH)
+        gc = G.client()
         sh = gc.open_by_key(G.SHEET_ID)
         try:
             ws = sh.worksheet("_прогоны")
@@ -371,10 +368,9 @@ def push_cache(rows, rows_size, dates):
     нет, и слал в группу ложные предупреждения. Если его кэш ведём мы, он видит
     данные на месте и помалкивает.
     """
-    import gspread
     import kosmos_gsheet as G
 
-    gc = gspread.service_account(filename=G.KEY_PATH)
+    gc = G.client()
     sh = gc.open_by_key(G.SHEET_ID)
     try:
         ws = sh.worksheet("_данные")
