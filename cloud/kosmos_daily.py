@@ -27,7 +27,8 @@ import build_kosmos_dashboard as B          # noqa: E402
 import build_local                          # noqa: E402
 
 FOLDER_ID = "1zDp7Tp5InWwgWzr7ahvlpZVX5dZZldTl"
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1mLPTkAl84cYwKKPZN_IsnrSuMPYA3vXweajwoup5e80/edit"
+SHEET_URL = ("https://docs.google.com/spreadsheets/d/"
+             "1mLPTkAl84cYwKKPZN_IsnrSuMPYA3vXweajwoup5e80/edit#gid=732690606")   # вкладка «Дашборд 2 недели»
 WORK = os.environ.get("KOSMOS_WORK", os.path.join(HERE, "данные"))
 OUT = os.path.join(HERE, "SALES REPORT WB KOSMOS.xlsx")
 STATE = os.path.join(HERE, "kosmos_state.json")

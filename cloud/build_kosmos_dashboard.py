@@ -334,7 +334,7 @@ def group_key(art):
     return a.split("/")[0].strip() if "/" in a else a
 
 
-def build_sheet1(rows, dates, transit):
+def build_sheet1(rows, dates, transit, titleSuffix=""):
     nd = len(dates)
     C = {"photo": 1, "art": 2, "wb": 3, "subj": 4, "brand": 5,
          "stock": 6, "fbs": 7, "toc": 8, "fromc": 9}
@@ -384,10 +384,11 @@ def build_sheet1(rows, dates, transit):
              % (buy_cols[-1], c_otot, c_o7, c_btot, c_days, c_share, c_share))
     L.append("<sheetData>")
 
-    title = ("SALES REPORT по дням — %s, %s–%s%s"
+    title = ("SALES REPORT по дням — %s, %s–%s%s%s"
              % (COMPANY, dates[0][8:10] + "." + dates[0][5:7],
                 dates[-1][8:10] + "." + dates[-1][5:7] + "." + dates[-1][:4],
-                (" (только %s)" % ART_PREFIX) if ART_PREFIX else ""))
+                (" (только %s)" % ART_PREFIX) if ART_PREFIX else "",
+                titleSuffix))
     row = ('<row r="1"><c r="A1" s="0" t="inlineStr"><is><t>%s</t></is></c>' % esc(title))
     for n in range(2, last + 1):
         if n == ord_cols[0]:
@@ -614,8 +615,12 @@ def build_sheet2(rows, dates, transit):
     return "".join(L)
 
 
+LAST_DAYS = 14          # глубина листа "Дашборд 2 недели"
+
+
 def build_xlsx(rows, dates, transit, rows_size=None):
-    """rows_size - те же строки, но в разрезе размеров; если задан, добавляется третий лист."""
+    """rows_size - те же строки, но в разрезе размеров; если задан, добавляется третий лист.
+    Четвёртым листом идёт тот же отчёт по артикулам за последние LAST_DAYS дней."""
     now = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     parts = {
         "[Content_Types].xml":
@@ -627,6 +632,7 @@ def build_xlsx(rows, dates, transit, rows_size=None):
             '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
             '<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
             + ('<Override PartName="/xl/worksheets/sheet3.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' if rows_size else '')
+            + '<Override PartName="/xl/worksheets/sheet4.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
             + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
             '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>'
             '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>'
@@ -658,8 +664,9 @@ def build_xlsx(rows, dates, transit, rows_size=None):
             "<vt:lpstr>Запас</vt:lpstr>%s</vt:vector></TitlesOfParts>"
             "<LinksUpToDate>false</LinksUpToDate><SharedDoc>false</SharedDoc>"
             "<HyperlinksChanged>false</HyperlinksChanged><AppVersion>16.0300</AppVersion></Properties>"
-            % (3 if rows_size else 2, 3 if rows_size else 2,
-               "<vt:lpstr>По размерам</vt:lpstr>" if rows_size else ""),
+            % (4 if rows_size else 3, 4 if rows_size else 3,
+               ("<vt:lpstr>По размерам</vt:lpstr>" if rows_size else "")
+               + "<vt:lpstr>Дашборд 2 недели</vt:lpstr>"),
         "xl/workbook.xml":
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
@@ -667,6 +674,7 @@ def build_xlsx(rows, dates, transit, rows_size=None):
             '<sheets><sheet name="SALES REPORT" sheetId="1" r:id="rId1"/>'
             '<sheet name="Запас" sheetId="2" r:id="rId2"/>'
             + ('<sheet name="По размерам" sheetId="3" r:id="rId4"/>' if rows_size else '')
+            + '<sheet name="Дашборд 2 недели" sheetId="4" r:id="rId5"/>'
             + '</sheets><calcPr fullCalcOnLoad="1"/></workbook>',
         "xl/_rels/workbook.xml.rels":
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -675,6 +683,7 @@ def build_xlsx(rows, dates, transit, rows_size=None):
             '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>'
             '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
             + ('<Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet3.xml"/>' if rows_size else '')
+            + '<Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet4.xml"/>'
             + "</Relationships>",
         "xl/styles.xml": STYLES,
         "xl/worksheets/sheet1.xml": build_sheet1(rows, dates, transit),
@@ -682,6 +691,9 @@ def build_xlsx(rows, dates, transit, rows_size=None):
     }
     if rows_size:
         parts["xl/worksheets/sheet3.xml"] = build_sheet1(rows_size, dates, {})
+    short = dates[-LAST_DAYS:] if len(dates) > LAST_DAYS else dates
+    parts["xl/worksheets/sheet4.xml"] = build_sheet1(rows, short, transit,
+                                                     titleSuffix=" — последние %d дней" % len(short))
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for name, content in parts.items():
